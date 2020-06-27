@@ -1,0 +1,139 @@
+---
+title: "The Jeffreys prior for skew--symmetric models"
+author: '[F. Javier Rubio](https://sites.google.com/site/fjavierrubio67/)'
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## The Jeffreys prior for the skewness parameter in skew--symmetric models
+
+Skew--symmetric models were defined in [1] in terms of the probability density function:
+
+$$
+s(y;\mu,\sigma,\lambda) = \dfrac{2}{\sigma} f\left(\dfrac{y-\mu}{\sigma}\right)G \left(\lambda \dfrac{y-\mu}{\sigma}\right),
+$$
+where $f$ is a continuous symmetric density function with support on ${\mathbb R}$, and $G$ is a CDF with continuous symmetric density $g$ with support on ${\mathbb R}$. [2] found that under mild regularity conditions the Jeffreys prior of $\lambda$ is given by:
+
+$$
+\pi(\lambda) \propto \sqrt{ \int_0^{\infty} x^2 f(x)\dfrac{g(\lambda x)^2}{G(\lambda x)[1-G(\lambda x)]} dx}.
+$$
+
+This prior satisfies [2]
+
+
+ (i) $\pi(\lambda)$ is symmetric about $0$.
+ (ii) The tails of $\pi(\lambda)$ are of order $O(\vert\lambda\vert^{-\frac{3}{2}})$.
+ (iii) $\pi(\lambda)$ is integrable.
+
+Using these properties, [2] proposed a tractable approximation to the Jeffreys prior of $\lambda$ using a $t$ distribution with $1/2$ degrees of freedom (to match the tails) and different scale parameters depending on the model: $\pi/2$ for the skew-normal, and $4/3$ for the skew-logistic. 
+
+The following R code shows the implementation of this prior for the skew-normal and skew-logistic models as well as their $t$-approximations.
+
+
+**References**
+
+1. [A Class of Distributions Which Includes the Normal Ones](http://www.jstor.org/stable/4615982)
+
+2. [On the independence Jeffreys prior for skew-symmetric models](https://doi.org/10.1016/j.spl.2013.11.012)
+
+```{r}
+rm(list=ls())
+
+#-----------------------------------------------------------------------
+#-----------------------------------------------------------------------
+# Jeffreys prior for the skew-normal and t-approximation
+#-----------------------------------------------------------------------
+#-----------------------------------------------------------------------
+
+# Integration region over x and lambda
+# The integration range requires some tweaks to make it numerically stable
+Ux <- 6
+Ul <- 449
+
+# Un-normalised Jeffreys prior
+tempf <- Vectorize(function(lambda){
+  fun <- Vectorize(function(x){
+    exp( 2*log(x) + dnorm(x,log=T) + 2*dnorm(lambda*x,log=T) -pnorm(lambda*x,log=T) - pnorm(-lambda*x,log=T) )
+  })
+  if(lambda>400) temp.var <- integrate(fun,0,0.015,rel.tol=1e-9, subdivisions = 1000)$val
+  if(lambda>100) temp.var <- integrate(fun,0,0.05,rel.tol=1e-9, subdivisions = 1000)$val
+  if(lambda>10) temp.var <- integrate(fun,0,0.5,rel.tol=1e-9, subdivisions = 1000)$val
+  if(lambda>5) temp.var <- integrate(fun,0,1,rel.tol=1e-9, subdivisions = 1000)$val
+  if(lambda<=5) temp.var <- integrate(fun,0,Ux,rel.tol=1e-9, subdivisions = 1000)$val
+  return(sqrt(temp.var))
+})
+
+# Normalising constant
+int.con <- 2*integrate(tempf,0,Ul,rel.tol=1e-9, subdivisions = 1000)$value
+int.con
+
+# Normalised Jeffreys prior
+piJ <- Vectorize(function(lambda){
+  return(tempf(lambda)/int.con)
+})
+
+# t-approximation
+c <-pi/2 # scale parameter
+t.approx <- function(x) dt(x/c,df=1/2)/c
+
+# Comparison
+curve(piJ,-15,15,n=1000,xlab=~lambda,ylab="Prior density",main="Jeffreys prior and t approximation",cex.lab=1.5,cex.axis=1.5,lwd=2,ylim=c(0,0.2))
+curve(t.approx,-15,15,add=T,lty=2,col="red",lwd=2,n=1000)
+box()
+legend(6, 0.175, c("Jeffreys","t-approx"), col=c("black","red"),
+       text.col = "black", lty = c(1, 2),
+       merge = TRUE, bg = "gray90",cex=1.5)
+
+
+
+rm(list=ls())
+
+#-----------------------------------------------------------------------
+#-----------------------------------------------------------------------
+# Jeffreys prior for the skew-logistic and t-approximation
+#-----------------------------------------------------------------------
+#-----------------------------------------------------------------------
+
+# Integration region over x and lambda
+# The integration range requires some tweaks to make it numerically stable
+Ux <- 6
+Ul <- 449
+
+# Un-normalised Jeffreys prior
+tempf <- Vectorize(function(lambda){
+  fun <- Vectorize(function(x){
+    exp( 2*log(x) + dlogis(x,log=T) + 2*dlogis(lambda*x,log=T) -plogis(lambda*x,log=T) - plogis(-lambda*x,log=T) )
+  })
+  if(lambda>400) temp.var <- integrate(fun,0,0.015,rel.tol=1e-9, subdivisions = 1000)$val
+  if(lambda>100) temp.var <- integrate(fun,0,0.05,rel.tol=1e-9, subdivisions = 1000)$val
+  if(lambda>10) temp.var <- integrate(fun,0,0.5,rel.tol=1e-9, subdivisions = 1000)$val
+  if(lambda>5) temp.var <- integrate(fun,0,1,rel.tol=1e-9, subdivisions = 1000)$val
+  if(lambda<=5) temp.var <- integrate(fun,0,Ux,rel.tol=1e-9, subdivisions = 1000)$val
+  return(sqrt(temp.var))
+})
+
+# Normalising constant
+int.con <- 2*integrate(tempf,0,Ul,rel.tol=1e-9, subdivisions = 1000)$value
+int.con
+
+# Normalised Jeffreys prior
+piJ <- Vectorize(function(lambda){
+  return(tempf(lambda)/int.con)
+})
+
+# t-approximation
+c <-4/3 # scale parameter
+t.approx <- function(x) dt(x/c,df=1/2)/c
+
+# Comparison
+curve(piJ,-15,15,n=1000,xlab=~lambda,ylab="Prior density",main="Jeffreys prior and t approximation",cex.lab=1.5,cex.axis=1.5,lwd=2,ylim=c(0,0.2))
+curve(t.approx,-15,15,add=T,lty=2,col="red",lwd=2,n=1000)
+box()
+legend(6, 0.175, c("Jeffreys","t-approx"), col=c("black","red"),
+       text.col = "black", lty = c(1, 2),
+       merge = TRUE, bg = "gray90",cex=1.5)
+```

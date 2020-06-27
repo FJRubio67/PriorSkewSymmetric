@@ -1,0 +1,242 @@
+---
+title: "Natural (non-) informative priors for the skew-normal distribution"
+author: '[F. Javier Rubio](https://sites.google.com/site/fjavierrubio67/)'
+date: "01/07/2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Natural (non-) informative priors for the skew-normal distribution
+
+The skew-normal distribution probability density function is given by [1]:
+
+$$s(x \,\vert \, \mu,\sigma,\lambda) = \dfrac{2}{\sigma}\phi\left(\dfrac{x-\mu}{\sigma}\right)\Phi\left(\lambda\dfrac{x-\mu}{\sigma}\right),$$
+where $\phi$ and $\Phi$ are the standard normal density and distribution functions, respectively, $\lambda \in {\mathbb R}$ is a shape parameter than induces skewness, $\mu\in {\mathbb R}$ is a location parameter, and $\sigma>0$ is a scale parameter. [1,2] have studied priors for the shape (skewness) parameter $\lambda$ in the family of skew-symmetric models [3], which contains the skew normal distribution. In particular, [2,4] studied the Jeffreys (reference) prior of $\lambda$, and found that it can be approximated with a Student-t distribution with $1/2$ degrees of freedom. [1] proposed a novel approach to construct informative and non-informative priors for $\lambda$ based on the [Total Variation distance](https://en.wikipedia.org/wiki/Total_variation_distance_of_probability_measures). Such strategy leads to closed-form, interpretable priors, with similar tails to that of the Jeffreys prior. As a joint prior for the parameters $(\mu,\sigma,\lambda)$ [1,2] consider the prior structure:
+$$\pi(\mu,\sigma,\lambda) \propto \dfrac{1}{\sigma}\pi(\lambda),$$
+for different choices of $\pi(\lambda)$.
+
+The following R code presents an example with real data that illustrate the use of the Jeffreys [2] and Total Variation priors [1]. It contains the implementation of the posterior distribution using (i) the BTV(1,1) prior, (ii) the BTV(0.5,0.5) prior, (iii) the BTV(3,0.5) prior, and (4) the Jeffreys prior. The fit is illustrated by comparing the histogram with the posterior predictive density function associated to each prior.
+
+1. [Natural (non-) informative priors for skew-symmetric distributions](https://arxiv.org/abs/1605.02880)
+
+2. [On the independence Jeffreys prior for skew-symmetric models](https://doi.org/10.1016/j.spl.2013.11.012)
+
+3. [A class of distributions which includes the normal ones](https://www.jstor.org/stable/4615982)
+
+4. [A note on reference priors for the scalar skew-normal distribution](https://doi.org/10.1016/j.jspi.2004.06.062)
+
+```{r}
+rm(list=ls())
+
+# Required packages
+library(sn)
+library(Rtwalk)
+library(TeachingDemos)
+
+# Data
+data(ais)
+
+bmi = ais$BMI[1:100]
+
+hist(bmi)
+
+# Log-likelihood and MLE (infinite)
+ll <- function(par){
+if(par[2]>0) return(-sum(dsn(bmi,par[1],par[2],par[3],log=T)))
+else return(Inf)
+}
+
+optim(c(20,1,2),ll)
+
+##########################################################################################################################
+# Log-posterior with BTV(1,1) prior
+##########################################################################################################################
+# -Log posterior
+lptv <- function(par){
+return(-sum(dsn(bmi,par[1],par[2],par[3],log=T)) + log(par[2]) - dt(par[3],df=1,log=T) )
+}
+
+# Number of iterations 
+NMH = 110000
+
+# Support function 
+Support <- function(x) {((0 < x[2]))}
+
+# Function to generate the initial points in the sampler
+X0 <- function(x) { c( runif(1, min=-0.1, max=0.1), 1+runif(1,min=-0.25,max=0.25),7+runif(1, min=-0.5, max=0.5)) }
+
+# Posterior samples
+set.seed(1234)
+outtv <- Runtwalk( dim=3,  Tr=NMH,  Obj=lptv, Supp=Support, x0=X0(), xp0=X0(),PlotLogPost = FALSE) 
+
+# thin-in and burn-in
+burn = 10000
+thin = 100
+ind = seq(burn,NMH,thin)
+
+muptv = outtv$output[ , 1][ind]
+sigmaptv = outtv$output[ , 2][ind]
+lambdaptv = outtv$output[ , 3][ind]
+
+# Some histograms and summaries
+hist(muptv)
+hist(sigmaptv)
+hist(lambdaptv)
+
+median(muptv)
+median(sigmaptv)
+median(lambdaptv)
+
+emp.hpd(muptv)
+emp.hpd(sigmaptv)
+emp.hpd(lambdaptv)
+
+##########################################################################################################################
+# Log-posterior with BTV(0.5,0.5) prior
+##########################################################################################################################
+
+# Log prior
+lpriorbtv = Vectorize(function(lambda){
+val = dbeta(atan(lambda)/pi + 0.5,1/2,1/2,log=T) + dt(lambda,df=1,log=T)
+return(val)
+})
+
+# - Log posterior
+lpbtv <- function(par){
+if(par[2]>0) return( log(par[2]) - sum(log(dsn(bmi,par[1],par[2],par[3]))) -  lpriorbtv(par[3])    )
+}
+
+# Posterior samples
+set.seed(1234)
+outbtv <- Runtwalk( dim=3,  Tr=NMH,  Obj=lpbtv, Supp=Support, x0=X0(), xp0=X0(),PlotLogPost = FALSE) 
+
+ind = seq(burn,NMH,thin)
+
+mupbtv = outbtv$output[ , 1][ind]
+sigmapbtv = outbtv$output[ , 2][ind]
+lambdapbtv = outbtv$output[ , 3][ind]
+
+# Some histograms and summaries
+hist(mupbtv)
+hist(sigmapbtv)
+hist(lambdapbtv)
+
+median(mupbtv)
+median(sigmapbtv)
+median(lambdapbtv)
+
+emp.hpd(mupbtv)
+emp.hpd(sigmapbtv)
+emp.hpd(lambdapbtv)
+
+##########################################################################################################################
+# Log-posterior with BTV informative prior
+##########################################################################################################################
+
+# Log prior
+lpriorbtvi = Vectorize(function(lambda){
+val = dbeta(atan(lambda)/pi + 0.5,3,1/2,log=T) + dt(lambda,df=1,log=T)
+return(val)
+})
+
+# - Log posterior
+lpbtvi <- function(par){
+if(par[2]>0) return( log(par[2]) - sum(log(dsn(bmi,par[1],par[2],par[3]))) -  lpriorbtvi(par[3])    )
+}
+
+# Posterior samples
+set.seed(1234)
+outbtvi <- Runtwalk( dim=3,  Tr=NMH,  Obj=lpbtvi, Supp=Support, x0=X0(), xp0=X0(),PlotLogPost = FALSE) 
+
+ind = seq(burn,NMH,thin)
+
+mupbtvi = outbtvi$output[ , 1][ind]
+sigmapbtvi = outbtvi$output[ , 2][ind]
+lambdapbtvi = outbtvi$output[ , 3][ind]
+
+# Some histograms and summaries
+hist(mupbtvi)
+hist(sigmapbtvi)
+hist(lambdapbtvi)
+
+median(mupbtvi)
+median(sigmapbtvi)
+median(lambdapbtvi)
+
+emp.hpd(mupbtvi)
+emp.hpd(sigmapbtvi)
+emp.hpd(lambdapbtvi)
+
+##########################################################################################################################
+# Log-posterior with Reference prior
+##########################################################################################################################
+
+# - Log posterior
+c=pi/2
+lpr <- function(par){
+  return(-sum(dsn(bmi,par[1],par[2],par[3],log=T)) + log(par[2]) - dt(par[3]/c,df=1/2,log=T) )
+}
+
+# Posterior samples
+set.seed(1234)
+outr <- Runtwalk( dim=3,  Tr=NMH,  Obj=lpr, Supp=Support, x0=X0(), xp0=X0(),PlotLogPost = FALSE) 
+
+mupr = outr$output[ , 1][ind]
+sigmapr = outr$output[ , 2][ind]
+lambdapr = outr$output[ , 3][ind]
+
+# Some histograms and summaries
+hist(mupr)
+hist(sigmapr)
+hist(lambdapr)
+
+median(mupr)
+median(sigmapr)
+median(lambdapr)
+
+emp.hpd(mupr)
+emp.hpd(sigmapr)
+emp.hpd(lambdapr)
+
+##########################################################################################################################
+# Predictive densities
+##########################################################################################################################
+
+# Predictive densities for the different priors
+predtv<- Vectorize(function(x) {
+  tempf <- function(par) dsn(x,par[1],par[2],par[3])
+  var <- mean(apply(cbind(muptv,sigmaptv,lambdaptv),1,tempf))
+  return(var)
+})
+
+predbtv<- Vectorize(function(x) {
+  tempf <- function(par) dsn(x,par[1],par[2],par[3])
+  var <- mean(apply(cbind(mupbtv,sigmapbtv,lambdapbtv),1,tempf))
+  return(var)
+})
+
+predbtvi<- Vectorize(function(x) {
+  tempf <- function(par) dsn(x,par[1],par[2],par[3])
+  var <- mean(apply(cbind(mupbtvi,sigmapbtvi,lambdapbtvi),1,tempf))
+  return(var)
+})
+
+predr<- Vectorize(function(x) {
+tempf <- function(par) dsn(x,par[1],par[2],par[3])
+var <- mean(apply(cbind(mupr,sigmapr,lambdapr),1,tempf))
+  return(var)
+})
+
+hist(bmi,breaks=20,probability = TRUE, xlim=c(15,35))
+curve(predtv,15,35,add=T,lwd=2,lty=1)
+curve(predbtv,15,35,add=T,lwd=2,lty=2)
+curve(predbtvi,15,35,add=T,lwd=2,lty=3)
+curve(predr,15,35,add=T,lwd=2,lty=4)
+box()
+legend(30, 0.15, c("BTV(1,1)","BTV(0.5,0.5)","BTV(3,0.5)","Jeffreys"),
+       text.col = "black", lty = c(1, 2, 3, 4),
+       merge = TRUE, bg = "gray90")
+```
